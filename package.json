@@ -1,0 +1,30 @@
+{
+  "name": "lore-mcp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server exposing tools to search and fetch lore.kernel.org mailing list archives, with optional lei integration.",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/index.js",
+    "dev": "node --loader ts-node/esm src/index.ts",
+    "cli": "node dist/cli.js",
+    "dev:cli": "node --loader ts-node/esm src/cli.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "npm run build && node --test --test-reporter=dot test/**/*.test.js",
+    "test:verbose": "npm run build && TEST_VERBOSE=1 node --test --test-reporter=spec test/**/*.test.js"
+  },
+  "engines": {
+    "node": ">=18.17"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.17.5",
+    "fast-xml-parser": "4.5.3",
+    "undici": "6.21.3"
+  },
+  "devDependencies": {
+    "@types/node": "20.19.13",
+    "ts-node": "10.9.2",
+    "typescript": "5.9.2"
+  }
+}
