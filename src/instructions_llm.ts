@@ -1,7 +1,7 @@
 import { loreQuickHelp } from "./instructions.js";
 export { loreQuickHelp };
 
-export const serverInstructions = `lore-mcp: lore.kernel.org tools
+export const serverInstructions = `lore-mcp: lore.kernel.org mailing list tools for linux, u-boot, etc patch surfing
 
 Tools
 - search_lore { query, limit?, scope? }
