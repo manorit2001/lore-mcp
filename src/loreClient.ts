@@ -1,9 +1,9 @@
-import { fetch } from "undici";
 import { XMLParser } from "fast-xml-parser";
 import { gunzipSync } from "node:zlib";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
+import { createProxyFetch, ProxyConfig } from "./proxyConfig.js";
 
 export type SearchResult = {
   subject: string;
@@ -30,7 +30,10 @@ export interface LoreClientOptions {
   threadTtlMs?: number; // cache TTL for thread mbox fetches
   diskCache?: boolean; // enable persistent artifact caching (raw, t.mbox.gz)
   artifactCacheDir?: string; // root directory for disk cache
+  proxyConfig?: ProxyConfig; // proxy configuration for HTTP requests
 }
+
+import { getProxyConfig } from "./proxyConfig.js";
 
 const DEFAULTS: Required<LoreClientOptions> = {
   baseUrl: process.env.LORE_BASE || "https://lore.kernel.org",
@@ -50,7 +53,8 @@ const DEFAULTS: Required<LoreClientOptions> = {
       if (home) return join(home, ".cache", "lore-mcp");
     } catch {}
     return join(process.cwd(), ".lore-mcp-cache");
-  })()
+  })(),
+  proxyConfig: getProxyConfig()
 };
 
 export class LoreClient {
@@ -65,6 +69,7 @@ export class LoreClient {
   private threadCache: Map<string, { ts: number; data: Message[] }> = new Map();
   private diskCache: boolean;
   private artifactCacheDir: string;
+  private fetch: ReturnType<typeof createProxyFetch>;
 
   constructor(opts: LoreClientOptions = {}) {
     this.baseUrl = opts.baseUrl || DEFAULTS.baseUrl;
@@ -75,6 +80,10 @@ export class LoreClient {
     this.threadTtlMs = opts.threadTtlMs ?? DEFAULTS.threadTtlMs;
     this.diskCache = opts.diskCache ?? DEFAULTS.diskCache;
     this.artifactCacheDir = opts.artifactCacheDir || DEFAULTS.artifactCacheDir;
+
+    // Initialize proxy-aware fetch
+    const proxyConfig = opts.proxyConfig ?? DEFAULTS.proxyConfig;
+    this.fetch = createProxyFetch(proxyConfig);
   }
 
   private atomUrl(query: string): string {
@@ -85,7 +94,7 @@ export class LoreClient {
 
   async search(query: string, limit = 20): Promise<SearchResult[]> {
     const url = this.atomUrl(query);
-    const res = await fetch(url, {
+    const res = await this.fetch(url, {
       headers: { "user-agent": this.userAgent }
     });
     if (!res.ok) throw new Error(`Search failed: ${res.status} ${res.statusText}`);
@@ -127,13 +136,13 @@ export class LoreClient {
   }
 
   private async fetchText(url: string): Promise<string> {
-    const res = await fetch(url, { headers: { "user-agent": this.userAgent } });
+    const res = await this.fetch(url, { headers: { "user-agent": this.userAgent } });
     if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
     return res.text();
   }
 
   private async fetchBuffer(url: string): Promise<Buffer> {
-    const res = await fetch(url, { headers: { "user-agent": this.userAgent } });
+    const res = await this.fetch(url, { headers: { "user-agent": this.userAgent } });
     if (!res.ok) throw new Error(`Fetch failed: ${res.status} ${res.statusText}`);
     const arrBuf = await res.arrayBuffer();
     return Buffer.from(arrBuf);

@@ -226,6 +226,12 @@ Environment variables:
  - `LORE_CACHE_DIR` or `LORE_MCP_CACHE_DIR` – root directory for persistent artifact cache. Defaults to `${XDG_CACHE_HOME}/lore-mcp` or `~/.cache/lore-mcp`.
  - `LORE_DISABLE_DISK_CACHE=1` – disable persistent artifact caching.
 
+### Proxy Configuration
+
+- `HTTP_PROXY` or `http_proxy` – HTTP proxy server URL
+- `HTTPS_PROXY` or `https_proxy` – HTTPS proxy server URL
+- `NO_PROXY` or `no_proxy` – Comma-separated list of hosts/patterns to bypass proxy
+
 ### Artifact caching
 
 When fetching by message-id or URL, the MCP now also caches fetched artifacts on disk:
@@ -309,7 +315,10 @@ Add an entry under `mcpServers` (adjust the absolute path):
         "LORE_SCOPE": "all",
         "LORE_SCOPES_TTL_MS": "600000",
         "LORE_MSG_TTL_MS": "86400000",
-        "LORE_THREAD_TTL_MS": "86400000"
+        "LORE_THREAD_TTL_MS": "86400000",
+        "HTTP_PROXY": "http://your-proxy:8080",
+        "HTTPS_PROXY": "https://your-secure-proxy:443",
+        "NO_PROXY": "localhost,127.0.0.1,.internal.com"
       }
     }
   }
