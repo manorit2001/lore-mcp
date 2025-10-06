@@ -294,7 +294,34 @@ npm install
 npm run build
 ```
 
-### Claude Desktop
+### Claude Desktop (Recommended: using claude mcp command)
+
+The easiest way to add lore-mcp to Claude Desktop is using the `claude mcp` command:
+
+```bash
+claude mcp add lore-mcp node /absolute/path/to/lore-mcp/dist/index.js
+```
+
+Optional: Add environment variables for configuration:
+
+```bash
+claude mcp add lore-mcp node /absolute/path/to/lore-mcp/dist/index.js \
+  --env LORE_BASE=https://lore.kernel.org \
+  --env LORE_SCOPE=all \
+  --env LORE_SCOPES_TTL_MS=600000
+```
+
+To verify installation:
+```bash
+claude mcp list
+```
+
+To remove if needed:
+```bash
+claude mcp remove lore-mcp
+```
+
+### Claude Desktop (Alternative: Manual JSON configuration)
 
 Create or edit the config file:
 
