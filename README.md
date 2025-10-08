@@ -60,6 +60,7 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
 
 ### `get_thread_summary` ↔ `npm run cli -- summary`
 - Generates a compact, non-LLM summary (`summarizeThread`) with optional quote stripping and token budgeting.
+- Supports pagination when you need to stream large discussions: pass `page` (1-based) and `pageSize` to limit the slice returned and avoid overfilling the client context. The response adds `{ page, pageSize, totalMessages, totalPages, hasMore }` metadata when either field is present.
 - MCP call:
   ```json
   {
@@ -69,7 +70,9 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
       "maxMessages": 40,
       "stripQuoted": true,
       "shortBodyBytes": 1200,
-      "tokenBudget": 8000
+      "tokenBudget": 8000,
+      "page": 1,
+      "pageSize": 10
     }
   }
   ```
@@ -80,7 +83,7 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
   # Header-only, de-duplicated view
   npm run cli -- summary --url https://lore.kernel.org/r/<msgid> --format normalized
   ```
-- Output: `{ items: [{ subject, from?, date?, messageId?, kind, body, hasDiff, trailers: [...] }] }` or the normalized form.
+- Output: `{ items: [...] }` for the default mode, or `{ page, pageSize, totalMessages, totalPages, hasMore, items }` when paginating.
 
 ### `summarize_thread_llm` ↔ `npm run cli -- summarize-thread`
 - Runs an abstractive LLM pass with map/reduce fallback for long threads. Auto-detects providers (OpenAI, Anthropic, Google Gemini, LiteLLM, Ollama, command, mock).
@@ -107,6 +110,7 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
 
 ### `get_patchset` ↔ `npm run cli -- patchset`
 - Collapses `[PATCH vX Y/Z]` series into aggregate stats and optional truncated diffs.
+- Prefers the [`b4`](https://people.kernel.org/monsieuricon/introducing-b4-and-patch-211-tools) CLI to download canonical patch mboxes when it is available; automatically falls back to the HTTP flow otherwise.
 - MCP call:
   ```json
   {
@@ -131,6 +135,22 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
   ```
 - Output: `Patchset` object with `series`, `patches[]`, and `aggregate` diff stats (and optionally truncated `diffs`).
 
+### `apply_patchset`
+- New MCP-only helper that shells out to `b4 am` so downstream clients can apply (or download via `--no-apply`) a patch series directly into a Git worktree.
+- MCP call:
+  ```json
+  {
+    "tool": "apply_patchset",
+    "arguments": {
+      "url": "https://lore.kernel.org/r/<msgid>",
+      "repoPath": "/path/to/repo",
+      "noApply": false,
+      "additionalArgs": ["--cherry-pick"]
+    }
+  }
+  ```
+- Returns: `{ stdout, stderr, exitCode }` straight from `b4`.
+
 ### `list_scopes` ↔ `npm run cli -- scopes`
 - Scrapes the root lore index and returns `{ scope, url, title?, updated? }[]`.
 - MCP call: `{ "tool": "list_scopes" }`
@@ -143,7 +163,7 @@ Each MCP tool has a matching CLI command. Examples below mirror the live integra
 
 ### CLI-only helpers
 - `npm run cli -- help` – command overview (mirrors this section).
-- `npm run cli -- cache …` – populate a Maildir on disk (defaults to `./maildir`).
+- `npm run cli -- cache …` – populate a Maildir on disk (defaults to `./maildir`). Use `--threads` to fetch full discussions. All MCP fetchers expose `cacheToMaildir` (default on, honouring `LORE_MCP_CACHE_MAILDIR`) and `maildir` so you can target the same storage location over the wire.
 
 ## Setup
 
