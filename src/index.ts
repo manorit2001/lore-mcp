@@ -34,6 +34,8 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      cacheToMaildir: z.boolean().optional(),
+      maildir: z.string().optional(),
     },
     async (args: any) => {
       if (!args.url && !args.messageId) {
@@ -56,6 +58,9 @@ async function main() {
       maxMessages: z.number().int().positive().max(500).optional(),
       stripQuoted: z.boolean().optional(),
       shortBodyBytes: z.number().int().positive().max(50_000).optional(),
+      tokenBudget: z.number().int().positive().max(200_000).optional(),
+      cacheToMaildir: z.boolean().optional(),
+      maildir: z.string().optional(),
     },
     async (args: any) => {
       if (!args.url && !args.messageId) {
@@ -107,12 +112,34 @@ async function main() {
       maxFiles: z.number().int().positive().max(200).optional(),
       maxHunksPerFile: z.number().int().positive().max(50).optional(),
       maxHunkLines: z.number().int().positive().max(2000).optional(),
+      tokenBudget: z.number().int().positive().max(200_000).optional(),
+      cacheToMaildir: z.boolean().optional(),
+      maildir: z.string().optional(),
     },
     async (args: any) => {
       if (!args.url && !args.messageId) {
         throw new Error("one of `url` or `messageId` is required");
       }
       return tools.get_patchset.handler(args);
+    }
+  );
+
+  // apply_patchset: b4 wrapper (requires url or messageId)
+  mcp.tool(
+    tools.apply_patchset.name,
+    tools.apply_patchset.description,
+    {
+      url: z.string().url().optional(),
+      messageId: z.string().optional(),
+      repoPath: z.string().optional(),
+      noApply: z.boolean().optional(),
+      additionalArgs: z.array(z.string()).optional(),
+    },
+    async (args: any) => {
+      if (!args.url && !args.messageId) {
+        throw new Error("one of `url` or `messageId` is required");
+      }
+      return tools.apply_patchset.handler(args);
     }
   );
 
@@ -127,6 +154,8 @@ async function main() {
       list: z.string().optional(),
       maxMessages: z.number().int().positive().max(500).optional(),
       maxBodyBytes: z.number().int().positive().max(5_000_000).optional(),
+      cacheToMaildir: z.boolean().optional(),
+      maildir: z.string().optional(),
     },
     async (args: any) => {
       if (!args.url && !args.messageId) {

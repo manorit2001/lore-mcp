@@ -3,7 +3,11 @@ import { gunzipSync } from "node:zlib";
 import { promises as fs } from "node:fs";
 import { join } from "node:path";
 import os from "node:os";
-import { createProxyFetch, ProxyConfig } from "./proxyConfig.js";
+import { createProxyFetch, getProxyConfig, type ProxyConfig } from "./proxyConfig.js";
+import type { Message } from "./messageTypes.js";
+import { parseMbox, parseRfc822 } from "./mboxParser.js";
+
+export type { Message } from "./messageTypes.js";
 
 export type SearchResult = {
   subject: string;
@@ -12,13 +16,6 @@ export type SearchResult = {
   url: string;
   messageId?: string;
   list?: string;
-};
-
-export type Message = {
-  headers: Record<string, string | string[]>;
-  body: string;
-  url?: string;
-  messageId?: string;
 };
 
 export interface LoreClientOptions {
@@ -32,8 +29,6 @@ export interface LoreClientOptions {
   artifactCacheDir?: string; // root directory for disk cache
   proxyConfig?: ProxyConfig; // proxy configuration for HTTP requests
 }
-
-import { getProxyConfig } from "./proxyConfig.js";
 
 const DEFAULTS: Required<LoreClientOptions> = {
   baseUrl: process.env.LORE_BASE || "https://lore.kernel.org",
@@ -270,66 +265,11 @@ export class LoreClient {
   }
 }
 
-// --- Minimal RFC822 parsing helpers ---
+// --- Maildir helpers ---
 
 function sanitize(name: string): string {
   const stripped = name.replace(/[<>]/g, "");
   return Array.from(stripped)
     .map((ch) => /[A-Za-z0-9@._+-]/.test(ch) ? ch : `%${ch.charCodeAt(0).toString(16)}`)
     .join("");
-}
-
-function parseHeaders(headerText: string): Record<string, string | string[]> {
-  const lines = headerText.split(/\r?\n/);
-  const headers: Record<string, string | string[]> = {};
-  let current: string | null = null;
-  for (const line of lines) {
-    if (/^\s/.test(line) && current) {
-      // continuation
-      const prev = headers[current];
-      const append = line.trim();
-      if (Array.isArray(prev)) headers[current] = [...prev.slice(0, -1), `${prev[prev.length - 1]} ${append}`];
-      else if (typeof prev === "string") headers[current] = `${prev} ${append}`;
-    } else {
-      const idx = line.indexOf(":");
-      if (idx > 0) {
-        const name = line.slice(0, idx).toLowerCase();
-        const value = line.slice(idx + 1).trim();
-        if (headers[name] === undefined) headers[name] = value;
-        else if (Array.isArray(headers[name])) (headers[name] as string[]).push(value);
-        else headers[name] = [headers[name] as string, value];
-        current = name;
-      } else {
-        current = null;
-      }
-    }
-  }
-  return headers;
-}
-
-function parseRfc822(raw: string): Message {
-  const sep = /\r?\n\r?\n/;
-  const idx = raw.search(sep);
-  if (idx === -1) return { headers: {}, body: raw };
-  const headerText = raw.slice(0, idx);
-  const body = raw.slice(idx + raw.match(sep)![0].length);
-  const headers = parseHeaders(headerText);
-  return { headers, body };
-}
-
-function parseMbox(mbox: string): Message[] {
-  const lines = mbox.split(/\r?\n/);
-  const messages: string[] = [];
-  let current: string[] = [];
-  for (const line of lines) {
-    if (line.startsWith("From ") && current.length > 0) {
-      messages.push(current.join("\n"));
-      current = [];
-    }
-    // Skip mbox leading 'From ' line itself; we don't include it in message raw
-    if (line.startsWith("From ") && current.length === 0) continue;
-    current.push(line);
-  }
-  if (current.length > 0) messages.push(current.join("\n"));
-  return messages.map(parseRfc822);
 }

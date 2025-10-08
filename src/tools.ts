@@ -3,10 +3,13 @@ import { LeiClient } from "./leiClient.js";
 import { summarizeThread, buildPatchset, applyTokenBudgetToThreadSummary, applyTokenBudgetToPatchset } from "./compact.js";
 import { summarizeThreadLLM } from "./llmSummarizer.js";
 import { ensureMaildir, writeToMaildir } from "./maildir.js";
+import type { Message } from "./messageTypes.js";
+import { B4Client } from "./b4Client.js";
 
 export function createTools() {
   const lore = new LoreClient();
   const lei = new LeiClient();
+  const b4 = new B4Client();
 
   function cacheEnabled(flag: any): boolean {
     if (flag === false) return false;
@@ -19,6 +22,42 @@ export function createTools() {
 
   function resolveMaildirPath(input?: string): string {
     return input || process.env.LORE_MCP_MAILDIR || "./maildir";
+  }
+
+  function resolveMessageId(msg: Message): string | undefined {
+    if (msg.messageId) return msg.messageId;
+    const mid = msg.headers?.["message-id"];
+    if (Array.isArray(mid)) return mid[0];
+    if (typeof mid === "string") return mid;
+    return undefined;
+  }
+
+  async function cacheMessagesToMaildir(messages: Message[], input: any): Promise<void> {
+    if (!cacheEnabled(input?.cacheToMaildir)) return;
+    const dir = resolveMaildirPath(input?.maildir);
+    await ensureMaildir(dir);
+    for (const m of messages) {
+      await writeToMaildir(dir, { headers: m.headers, body: m.body, messageId: resolveMessageId(m) });
+    }
+  }
+
+  async function fetchPatchMessages(input: any): Promise<Message[]> {
+    if (await b4.isAvailable()) {
+      try {
+        const viaB4 = await b4.fetchSeries({ messageId: input.messageId, url: input.url });
+        if (viaB4.length > 0) {
+          return viaB4;
+        }
+      } catch {
+        // Ignore and fallback to HTTP flow
+      }
+    }
+    return lore.getThreadMbox({
+      url: input.url,
+      messageId: input.messageId,
+      scope: input.scope ?? input.list,
+      list: input.list
+    });
   }
 
   return {
@@ -80,13 +119,7 @@ export function createTools() {
       },
       handler: async (input: any) => {
         const msg = await lore.getMessageRaw({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
-        const shouldCache = cacheEnabled(input.cacheToMaildir);
-        if (shouldCache) {
-          const dir = resolveMaildirPath(input.maildir);
-          await ensureMaildir(dir);
-          const mid = msg.messageId || (msg.headers && (msg.headers["message-id"] as string)) || undefined;
-          await writeToMaildir(dir, { headers: msg.headers, body: msg.body, messageId: mid });
-        }
+        await cacheMessagesToMaildir([msg], input);
         return {
           content: [{ type: "text", text: JSON.stringify(msg, null, 2) }],
           structuredContent: msg
@@ -169,16 +202,8 @@ export function createTools() {
         ]
       },
       handler: async (input: any) => {
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
-        const shouldCache = cacheEnabled(input.cacheToMaildir);
-        if (shouldCache) {
-          const dir = resolveMaildirPath(input.maildir);
-          await ensureMaildir(dir);
-          for (const m of messages) {
-            const mid = m.messageId || (m.headers && (m.headers["message-id"] as string)) || undefined;
-            await writeToMaildir(dir, { headers: m.headers, body: m.body, messageId: mid });
-          }
-        }
+        const messages = await lore.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        await cacheMessagesToMaildir(messages, input);
         const summary = await summarizeThreadLLM(messages, {
           stripQuoted: input.stripQuoted ?? true,
           maxMessages: input.maxMessages ?? 0,
@@ -229,16 +254,8 @@ export function createTools() {
         ]
       },
       handler: async (input: any) => {
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
-        const shouldCache = cacheEnabled(input.cacheToMaildir);
-        if (shouldCache) {
-          const dir = resolveMaildirPath(input.maildir);
-          await ensureMaildir(dir);
-          for (const m of messages) {
-            const mid = m.messageId || (m.headers && (m.headers["message-id"] as string)) || undefined;
-            await writeToMaildir(dir, { headers: m.headers, body: m.body, messageId: mid });
-          }
-        }
+        const messages = await fetchPatchMessages(input);
+        await cacheMessagesToMaildir(messages, input);
         const patchset = buildPatchset(messages, {
           statOnly: input.statOnly ?? true,
           includeDiffs: input.includeDiffs ?? false,
@@ -279,16 +296,8 @@ export function createTools() {
       handler: async (input: any) => {
         const maxMessages = input.maxMessages ?? 50;
         const maxBodyBytes = input.maxBodyBytes ?? 20000;
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
-        const shouldCache = cacheEnabled(input.cacheToMaildir);
-        if (shouldCache) {
-          const dir = resolveMaildirPath(input.maildir);
-          await ensureMaildir(dir);
-          for (const m of messages) {
-            const mid = m.messageId || (m.headers && (m.headers["message-id"] as string)) || undefined;
-            await writeToMaildir(dir, { headers: m.headers, body: m.body, messageId: mid });
-          }
-        }
+        const messages = await lore.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        await cacheMessagesToMaildir(messages, input);
         const trimmed = messages.slice(0, maxMessages).map(m => ({
           ...m,
           body: m.body.length > maxBodyBytes ? m.body.slice(0, maxBodyBytes) + `\n...[truncated ${m.body.length - maxBodyBytes} bytes]` : m.body
@@ -296,6 +305,51 @@ export function createTools() {
         return {
           content: [{ type: "text", text: JSON.stringify(trimmed, null, 2) }],
           structuredContent: { items: trimmed }
+        } as any;
+      }
+    }
+    ,
+
+    apply_patchset: {
+      name: "apply_patchset",
+      description: "Use b4 am to apply or download a patch series into a local Git worktree",
+      inputSchema: {
+        type: "object",
+        properties: {
+          url: { type: "string", description: "Thread URL (resolved to Message-Id)" },
+          messageId: { type: "string", description: "Message-Id to pass to b4" },
+          repoPath: { type: "string", description: "Path to the Git repository (defaults to current working directory)" },
+          noApply: { type: "boolean", description: "Invoke b4 am with --no-apply to only download patches" },
+          additionalArgs: { type: "array", description: "Extra flags for b4 am", items: { type: "string" } }
+        },
+        anyOf: [
+          { required: ["url"] },
+          { required: ["messageId"] }
+        ]
+      },
+      handler: async (input: any) => {
+        if (!(await b4.isAvailable())) {
+          throw new Error("b4 CLI is required but was not found in PATH");
+        }
+        const repoPath = input.repoPath || process.cwd();
+        const additionalArgs = Array.isArray(input.additionalArgs)
+          ? input.additionalArgs.map((s: any) => String(s))
+          : undefined;
+        const result = await b4.apply({
+          messageId: input.messageId,
+          url: input.url,
+          cwd: repoPath,
+          noApply: input.noApply ?? false,
+          additionalArgs
+        });
+        const textParts = [
+          `b4 am exited with code ${result.exitCode}`,
+          result.stdout ? `\nstdout:\n${result.stdout}` : "",
+          result.stderr ? `\nstderr:\n${result.stderr}` : ""
+        ].filter(Boolean);
+        return {
+          content: [{ type: "text", text: textParts.join("") }],
+          structuredContent: result
         } as any;
       }
     }

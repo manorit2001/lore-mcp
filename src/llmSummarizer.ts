@@ -1,4 +1,4 @@
-import type { Message } from "./loreClient.js";
+import type { Message } from "./messageTypes.js";
 import { estimateTokens, getHeader, stripQuoted, extractTrailers, extractDiffBlocks, computeDiffStat } from "./compact.js";
 import { LLMClient, type LLMConfig } from "./llm.js";
 

@@ -1,4 +1,4 @@
-import type { Message } from "./loreClient.js";
+import type { Message } from "./messageTypes.js";
 
 export type TrailerLine = {
   key: string;
