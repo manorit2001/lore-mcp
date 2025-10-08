@@ -59,6 +59,8 @@ async function main() {
       stripQuoted: z.boolean().optional(),
       shortBodyBytes: z.number().int().positive().max(50_000).optional(),
       tokenBudget: z.number().int().positive().max(200_000).optional(),
+      page: z.number().int().positive().optional(),
+      pageSize: z.number().int().positive().max(500).optional(),
       cacheToMaildir: z.boolean().optional(),
       maildir: z.string().optional(),
     },

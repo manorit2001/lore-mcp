@@ -153,19 +153,35 @@ export function createTools() {
         const maxMessages = input.maxMessages ?? 50;
         const stripQuoted = input.stripQuoted ?? true;
         const shortBodyBytes = input.shortBodyBytes ?? 1200;
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
-        const shouldCache = cacheEnabled(input.cacheToMaildir);
-        if (shouldCache) {
-          const dir = resolveMaildirPath(input.maildir);
-          await ensureMaildir(dir);
-          for (const m of messages) {
-            const mid = m.messageId || (m.headers && (m.headers["message-id"] as string)) || undefined;
-            await writeToMaildir(dir, { headers: m.headers, body: m.body, messageId: mid });
-          }
-        }
-        let summary = summarizeThread(messages, { maxMessages, stripQuoted, shortBodyBytes });
+        const messages = await lore.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        await cacheMessagesToMaildir(messages, input);
+        const totalMessages = messages.length;
+        const hasPagination = input.page !== undefined || input.pageSize !== undefined;
+        const rawPageSize = hasPagination ? Number(input.pageSize ?? maxMessages) : maxMessages;
+        const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 ? Math.floor(rawPageSize) : maxMessages;
+        const page = hasPagination ? Math.max(1, Math.floor(Number(input.page ?? 1))) : 1;
+        const startIndex = hasPagination ? (page - 1) * pageSize : 0;
+        const pageMessages = hasPagination
+          ? messages.slice(startIndex, startIndex + pageSize)
+          : messages.slice(0, maxMessages);
+        let summary = summarizeThread(pageMessages, { maxMessages: pageMessages.length || maxMessages, stripQuoted, shortBodyBytes });
         if (typeof input.tokenBudget === "number" && input.tokenBudget > 0) {
           summary = applyTokenBudgetToThreadSummary(summary, input.tokenBudget);
+        }
+        if (hasPagination) {
+          const totalPages = pageSize > 0 ? Math.max(1, Math.ceil(totalMessages / pageSize)) : 1;
+          const structured = {
+            page,
+            pageSize,
+            totalMessages,
+            totalPages,
+            hasMore: page < totalPages,
+            items: summary.items
+          };
+          return {
+            content: [{ type: "text", text: JSON.stringify(structured, null, 2) }],
+            structuredContent: structured
+          } as any;
         }
         return {
           content: [{ type: "text", text: JSON.stringify(summary, null, 2) }],
