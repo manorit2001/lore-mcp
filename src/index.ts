@@ -13,7 +13,6 @@ async function main() {
   );
   const tools = createTools();
 
-  // search_lore
   mcp.tool(
     tools.search_lore.name,
     tools.search_lore.description,
@@ -21,11 +20,11 @@ async function main() {
       query: z.string().min(1),
       limit: z.number().int().positive().max(200).default(20).optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
+      baseUrl: z.string().url().optional(),
     },
     async (args: any) => tools.search_lore.handler(args)
   );
 
-  // get_message_raw: require one of url or messageId
   mcp.tool(
     tools.get_message_raw.name,
     tools.get_message_raw.description,
@@ -34,6 +33,7 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      baseUrl: z.string().url().optional(),
     },
     async (args: any) => {
       if (!args.url && !args.messageId) {
@@ -43,8 +43,6 @@ async function main() {
     }
   );
 
-  // get_thread_mbox: require one of url or messageId
-  // get_thread_summary: require one of url or messageId
   mcp.tool(
     tools.get_thread_summary.name,
     tools.get_thread_summary.description,
@@ -53,6 +51,7 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      baseUrl: z.string().url().optional(),
       maxMessages: z.number().int().positive().max(500).optional(),
       stripQuoted: z.boolean().optional(),
       shortBodyBytes: z.number().int().positive().max(50_000).optional(),
@@ -65,7 +64,6 @@ async function main() {
     }
   );
 
-  // summarize_thread_llm: require one of url or messageId
   mcp.tool(
     tools.summarize_thread_llm.name,
     tools.summarize_thread_llm.description,
@@ -74,6 +72,7 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      baseUrl: z.string().url().optional(),
       maxMessages: z.number().int().nonnegative().max(2000).optional(),
       stripQuoted: z.boolean().optional(),
       provider: z.enum(["openai", "anthropic", "google", "ollama", "command", "mock", "litellm"]).optional(),
@@ -93,7 +92,6 @@ async function main() {
     }
   );
 
-  // get_patchset: require one of url or messageId
   mcp.tool(
     tools.get_patchset.name,
     tools.get_patchset.description,
@@ -102,6 +100,7 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      baseUrl: z.string().url().optional(),
       statOnly: z.boolean().optional(),
       includeDiffs: z.boolean().optional(),
       maxFiles: z.number().int().positive().max(200).optional(),
@@ -116,7 +115,6 @@ async function main() {
     }
   );
 
-  // get_thread_mbox: require one of url or messageId
   mcp.tool(
     tools.get_thread_mbox.name,
     tools.get_thread_mbox.description,
@@ -125,6 +123,7 @@ async function main() {
       messageId: z.string().optional(),
       scope: z.string().regex(/^[A-Za-z0-9._-]+$/).optional(),
       list: z.string().optional(),
+      baseUrl: z.string().url().optional(),
       maxMessages: z.number().int().positive().max(500).optional(),
       maxBodyBytes: z.number().int().positive().max(5_000_000).optional(),
     },
@@ -136,12 +135,13 @@ async function main() {
     }
   );
 
-  // list_scopes: discover available mailing lists
   mcp.tool(
     tools.list_scopes.name,
     tools.list_scopes.description,
-    {},
-    async () => tools.list_scopes.handler()
+    {
+      baseUrl: z.string().url().optional(),
+    },
+    async (args: any) => tools.list_scopes.handler(args)
   );
 
   // Resource: scopes listing (JSON)

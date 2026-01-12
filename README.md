@@ -96,6 +96,22 @@ These environment variables cover the common deployments:
 
 If the public-inbox `lei` binary is on `PATH`, `search_lore` will automatically use it for faster, more expressive queries; otherwise the server falls back to HTTP endpoints.
 
+### Runtime Base URL Override
+
+All tools accept an optional `baseUrl` parameter to query alternative lore instances at runtime without restarting the server:
+
+```json
+{
+  "name": "search_lore",
+  "arguments": {
+    "query": "s:fix",
+    "baseUrl": "https://lore.example.org"
+  }
+}
+```
+
+When `baseUrl` is omitted, tools use the `LORE_BASE` environment variable (default: `https://lore.kernel.org`).
+
 ## Development & Testing
 
 - `npm run dev` – Start the server with ts-node for iterative changes.

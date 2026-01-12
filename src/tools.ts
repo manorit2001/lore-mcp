@@ -1,12 +1,18 @@
-import { LoreClient } from "./loreClient.js";
+import { LoreClient, LoreClientOptions } from "./loreClient.js";
 import { LeiClient } from "./leiClient.js";
 import { summarizeThread, buildPatchset, applyTokenBudgetToThreadSummary, applyTokenBudgetToPatchset } from "./compact.js";
 import { summarizeThreadLLM } from "./llmSummarizer.js";
 import { ensureMaildir, writeToMaildir } from "./maildir.js";
 
 export function createTools() {
-  const lore = new LoreClient();
   const lei = new LeiClient();
+
+  function createClient(baseUrl?: string, scope?: string): LoreClient {
+    const opts: LoreClientOptions = {};
+    if (baseUrl) opts.baseUrl = baseUrl;
+    if (scope && scope !== "all") opts.scope = scope;
+    return new LoreClient(opts);
+  }
 
   function cacheEnabled(flag: any): boolean {
     if (flag === false) return false;
@@ -30,7 +36,8 @@ export function createTools() {
         properties: {
           query: { type: "string", description: "public-inbox query, e.g., df:2024-01-01.. s:subject l:linux-kernel" },
           limit: { type: "number", default: 20 },
-          scope: { type: "string", description: "Override scope (mailing list), e.g., linux-kernel; defaults to 'all'" }
+          scope: { type: "string", description: "Override scope (mailing list), e.g., linux-kernel; defaults to 'all'" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" }
         },
         required: ["query"]
       },
@@ -38,7 +45,6 @@ export function createTools() {
         const q: string = input.query;
         const limit: number = input.limit ?? 20;
         const scope: string | undefined = input.scope;
-        // Try lei first for richer results, fallback to HTTP
         try {
           if (await lei.isAvailable()) {
             const qWithScope = scope && scope !== "all" ? `${q} l:${scope}` : q;
@@ -49,9 +55,8 @@ export function createTools() {
             } as any;
           }
         } catch {
-          // ignore and fallback
         }
-        const httpClient = scope && scope !== "all" ? new LoreClient({ scope }) : lore;
+        const httpClient = createClient(input.baseUrl, scope);
         const items = await httpClient.search(q, limit);
         return {
           content: [{ type: "text", text: JSON.stringify(items, null, 2) }],
@@ -70,6 +75,7 @@ export function createTools() {
           messageId: { type: "string", description: "Message-Id, e.g., 20210101123456.1234-1-foo@bar" },
           scope: { type: "string", description: "Mailing list scope, e.g., linux-kernel; optional when using /r/" },
           list: { type: "string", description: "(Deprecated) Alias for scope" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" },
           cacheToMaildir: { type: "boolean", description: "Write fetched message to a Maildir (defaults to on; set false to disable)" },
           maildir: { type: "string", description: "Maildir path if caching is enabled (defaults to ./maildir or $LORE_MCP_MAILDIR)" }
         },
@@ -79,7 +85,8 @@ export function createTools() {
         ]
       },
       handler: async (input: any) => {
-        const msg = await lore.getMessageRaw({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        const client = createClient(input.baseUrl);
+        const msg = await client.getMessageRaw({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
         const shouldCache = cacheEnabled(input.cacheToMaildir);
         if (shouldCache) {
           const dir = resolveMaildirPath(input.maildir);
@@ -104,6 +111,7 @@ export function createTools() {
           messageId: { type: "string" },
           scope: { type: "string" },
           list: { type: "string", description: "(Deprecated) Alias for scope" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" },
           maxMessages: { type: "number", default: 50 },
           stripQuoted: { type: "boolean", default: true },
           shortBodyBytes: { type: "number", default: 1200 },
@@ -120,7 +128,8 @@ export function createTools() {
         const maxMessages = input.maxMessages ?? 50;
         const stripQuoted = input.stripQuoted ?? true;
         const shortBodyBytes = input.shortBodyBytes ?? 1200;
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        const client = createClient(input.baseUrl);
+        const messages = await client.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
         const shouldCache = cacheEnabled(input.cacheToMaildir);
         if (shouldCache) {
           const dir = resolveMaildirPath(input.maildir);
@@ -151,9 +160,9 @@ export function createTools() {
           messageId: { type: "string" },
           scope: { type: "string" },
           list: { type: "string", description: "(Deprecated) Alias for scope" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" },
           maxMessages: { type: "number", default: 0, description: "0 = all messages" },
           stripQuoted: { type: "boolean", default: true },
-          // LLM config overrides
           provider: { type: "string", description: "openai | anthropic | google | ollama | command | mock | litellm (default auto-detected)" },
           model: { type: "string" },
           contextTokens: { type: "number", description: "Approx. model context window tokens (default auto)" },
@@ -169,7 +178,8 @@ export function createTools() {
         ]
       },
       handler: async (input: any) => {
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        const client = createClient(input.baseUrl);
+        const messages = await client.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
         const shouldCache = cacheEnabled(input.cacheToMaildir);
         if (shouldCache) {
           const dir = resolveMaildirPath(input.maildir);
@@ -214,6 +224,7 @@ export function createTools() {
           messageId: { type: "string" },
           scope: { type: "string" },
           list: { type: "string", description: "(Deprecated) Alias for scope" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" },
           statOnly: { type: "boolean", default: true },
           includeDiffs: { type: "boolean", default: false },
           maxFiles: { type: "number", default: 10 },
@@ -229,7 +240,8 @@ export function createTools() {
         ]
       },
       handler: async (input: any) => {
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        const client = createClient(input.baseUrl);
+        const messages = await client.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
         const shouldCache = cacheEnabled(input.cacheToMaildir);
         if (shouldCache) {
           const dir = resolveMaildirPath(input.maildir);
@@ -266,6 +278,7 @@ export function createTools() {
           messageId: { type: "string" },
           scope: { type: "string" },
           list: { type: "string", description: "(Deprecated) Alias for scope" },
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" },
           maxMessages: { type: "number", default: 50 },
           maxBodyBytes: { type: "number", default: 20000 },
           cacheToMaildir: { type: "boolean", description: "Write thread messages to a Maildir (defaults to on; set false to disable)" },
@@ -279,7 +292,8 @@ export function createTools() {
       handler: async (input: any) => {
         const maxMessages = input.maxMessages ?? 50;
         const maxBodyBytes = input.maxBodyBytes ?? 20000;
-        const messages = await (new LoreClient()).getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
+        const client = createClient(input.baseUrl);
+        const messages = await client.getThreadMbox({ url: input.url, messageId: input.messageId, scope: input.scope ?? input.list, list: input.list });
         const shouldCache = cacheEnabled(input.cacheToMaildir);
         if (shouldCache) {
           const dir = resolveMaildirPath(input.maildir);
@@ -306,11 +320,13 @@ export function createTools() {
       description: "List available mailing list scopes on lore.kernel.org",
       inputSchema: {
         type: "object",
-        properties: {},
-        additionalProperties: false
+        properties: {
+          baseUrl: { type: "string", format: "uri", description: "Base URL for lore instance (default: https://lore.kernel.org)" }
+        }
       },
-      handler: async () => {
-        const items = await lore.listScopes();
+      handler: async (input: any) => {
+        const client = createClient(input?.baseUrl);
+        const items = await client.listScopes();
         return {
           content: [{ type: "text", text: JSON.stringify(items, null, 2) }],
           structuredContent: { items }
