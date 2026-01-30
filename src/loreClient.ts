@@ -106,8 +106,12 @@ export class LoreClient {
     const results: SearchResult[] = entries.slice(0, limit).map((e: any) => {
       const link = Array.isArray(e.link) ? e.link.find((l: any) => l["@_rel"] === "alternate") || e.link[0] : e.link;
       const url = link?.["@_href"] || e.id || "";
+      const rawTitle = e.title;
+      const subject = typeof rawTitle === "object" && rawTitle?.["#text"]
+        ? rawTitle["#text"]
+        : rawTitle || "";
       return {
-        subject: e.title || "",
+        subject,
         from: e.author?.name || e.author || undefined,
         date: e.updated || e.published || undefined,
         url,
