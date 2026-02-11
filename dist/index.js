@@ -115,6 +115,9 @@ async function main() {
     mcp.tool("lore_help", "Show lore.kernel.org/public-inbox search syntax and endpoints", {}, async () => ({ content: [{ type: "text", text: loreQuickHelp }] }));
     const transport = new StdioServerTransport();
     await mcp.connect(transport);
+    if (process.env.LORE_MCP_SILENT_STARTUP !== "1") {
+        console.error("lore-mcp server started (stdio transport)");
+    }
 }
 main().catch((err) => {
     console.error("lore-mcp server failed:", err);
