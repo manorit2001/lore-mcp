@@ -4,28 +4,7 @@ import { LeiClient } from "./leiClient.js";
 import { loreQuickHelp } from "./instructions.js";
 import { summarizeThread, summarizeThreadNormalized, applyTokenBudgetToThreadSummary, buildPatchset, applyTokenBudgetToPatchset } from "./compact.js";
 import { summarizeThreadLLM } from "./llmSummarizer.js";
-function parseArgv(argv) {
-    const [, , cmd = "help", ...rest] = argv;
-    const args = {};
-    for (let i = 0; i < rest.length; i++) {
-        const t = rest[i];
-        if (t.startsWith("--")) {
-            const key = t.slice(2);
-            const nxt = rest[i + 1];
-            if (!nxt || nxt.startsWith("--")) {
-                args[key] = true;
-            }
-            else {
-                args[key] = nxt;
-                i++;
-            }
-        }
-        else if (!args["_"]) {
-            args["_"] = t;
-        }
-    }
-    return { cmd, args };
-}
+import { parseArgv, parseBooleanArg } from "./cliArgs.js";
 async function main() {
     const { cmd, args } = parseArgv(process.argv);
     const lore = new LoreClient();
@@ -117,7 +96,7 @@ async function main() {
             const messageId = args.mid || args.messageId || undefined;
             const scope = args.scope || args.list || undefined;
             const maxMessages = args.maxMessages ? Number(args.maxMessages) : 50;
-            const stripQuoted = args.stripQuoted === undefined ? true : Boolean(args.stripQuoted);
+            const stripQuoted = parseBooleanArg(args.stripQuoted, true);
             const shortBodyBytes = args.shortBodyBytes ? Number(args.shortBodyBytes) : 1200;
             const tokenBudget = args.tokenBudget ? Number(args.tokenBudget) : undefined;
             const format = (args.format || "full").toLowerCase();
@@ -149,8 +128,8 @@ async function main() {
             const url = args.url || undefined;
             const messageId = args.mid || args.messageId || undefined;
             const scope = args.scope || args.list || undefined;
-            const statOnly = args.statOnly === undefined ? false : Boolean(args.statOnly);
-            const includeDiffs = args.includeDiffs ? Boolean(args.includeDiffs) : false;
+            const statOnly = parseBooleanArg(args.statOnly, false);
+            const includeDiffs = parseBooleanArg(args.includeDiffs, false);
             const maxFiles = args.maxFiles ? Number(args.maxFiles) : 10;
             const maxHunksPerFile = args.maxHunksPerFile ? Number(args.maxHunksPerFile) : 3;
             const maxHunkLines = args.maxHunkLines ? Number(args.maxHunkLines) : 80;
@@ -182,7 +161,7 @@ async function main() {
             const messageId = args.mid || args.messageId || undefined;
             const scope = args.scope || args.list || undefined;
             const maxMessages = args.maxMessages ? Number(args.maxMessages) : undefined;
-            const stripQuoted = args.stripQuoted === undefined ? true : Boolean(args.stripQuoted);
+            const stripQuoted = parseBooleanArg(args.stripQuoted, true);
             const providerRaw = args.provider || undefined;
             const provider = providerRaw;
             const model = args.model || undefined;
@@ -190,7 +169,8 @@ async function main() {
             const maxOutputTokens = args.maxOutputTokens ? Number(args.maxOutputTokens) : undefined;
             const temperature = args.temperature !== undefined ? Number(args.temperature) : undefined;
             const strategy = args.strategy;
-            const timings = Boolean(args.timings || process.env.LORE_MCP_TIMINGS);
+            const timings = parseBooleanArg(args.timings, false)
+                || parseBooleanArg(process.env.LORE_MCP_TIMINGS, false);
             if (!url && !messageId) {
                 console.error("summarize-thread: --url or --mid is required");
                 process.exit(2);
@@ -236,7 +216,7 @@ async function main() {
             }
             const n = Number(args.n || args.limit || 20);
             const scope = args.scope || args.list || "all";
-            const threads = Boolean(args.threads);
+            const threads = parseBooleanArg(args.threads, false);
             const maildir = args.maildir || "./maildir";
             const concurrency = Math.max(1, Number(args.concurrency || 2));
             const { ensureMaildir, writeToMaildir } = await import("./maildir.js");
