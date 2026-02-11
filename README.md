@@ -13,6 +13,17 @@ npm start        # runs the MCP server (dist/index.js) over stdio
 
 The server caches fetched mail in `./maildir` by default. Override with `LORE_MCP_MAILDIR=/path/to/maildir`. During development you can use `npm run dev` to execute the TypeScript entry via ts-node.
 
+### Run directly from GitHub with npx
+If you do not want a full clone, run the MCP server directly from the Git URL:
+
+```bash
+npx -y github:manorit2001/lore-mcp#master
+```
+
+This still runs over stdio, so MCP clients can use `command: "npx"` plus args. First run may take longer because `prepare` builds TypeScript before launch.
+
+For reproducible setups, pin a tag or commit instead of `#master`.
+
 ### Run with Docker
 ```bash
 docker build -t lore-mcp .
@@ -72,6 +83,19 @@ Adjust the volume path so Claude can persist cache data. Restart Claude Desktop 
 
 ### Other MCP clients (Cursor, Cline, Codex CLI, etc.)
 Configure a server that runs `node /absolute/path/to/lore-mcp/dist/index.js` (or the Docker command above) and pass any desired environment variables (see below). Once registered, call `list_scopes` or read the `mcp://lore-mcp/scopes` resource to verify the connection.
+
+You can also use `npx` + Git URL without cloning locally:
+
+```json
+{
+  "command": "npx",
+  "args": ["-y", "github:manorit2001/lore-mcp#master"],
+  "env": {
+    "LORE_BASE": "https://lore.kernel.org",
+    "LORE_SCOPE": "all"
+  }
+}
+```
 
 ## Tools at a Glance
 
