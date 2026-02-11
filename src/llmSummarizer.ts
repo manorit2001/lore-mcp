@@ -1,5 +1,5 @@
 import type { Message } from "./loreClient.js";
-import { estimateTokens, getHeader, stripQuoted, extractTrailers, extractDiffBlocks, computeDiffStat } from "./compact.js";
+import { estimateTokens, getHeader, stripQuoted, extractTrailers, extractDiffBlocks, computeDiffStat, dedupeThreadMessages } from "./compact.js";
 import { LLMClient, type LLMConfig } from "./llm.js";
 
 export type SummarizerOptions = LLMConfig & {
@@ -132,8 +132,9 @@ function robustParseJson(text: string): any | undefined {
 
 export async function summarizeThreadLLM(messages: Message[], opts: SummarizerOptions = {}): Promise<ThreadSummaryLLM> {
   const stripQuotedOpt = opts.stripQuoted !== false; // default true
-  const maxMessages = opts.maxMessages && opts.maxMessages > 0 ? opts.maxMessages : messages.length;
-  const msgs = messages.slice(0, maxMessages);
+  const deduped = dedupeThreadMessages(messages);
+  const maxMessages = opts.maxMessages && opts.maxMessages > 0 ? opts.maxMessages : deduped.length;
+  const msgs = deduped.slice(0, maxMessages);
   const participants = summarizeParticipants(msgs);
   const subject0 = getHeader(msgs[0]?.headers || {}, "subject") || "Thread";
 

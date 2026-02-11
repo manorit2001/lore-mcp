@@ -52,7 +52,7 @@ function normalizeSubjectRaw(subject: string): string {
 
 export function summarizeThreadNormalized(messages: Message[], opts: { maxMessages?: number } = {}): NormalizedThreadSummary {
   const { maxMessages = messages.length } = opts;
-  const msgs = messages.slice(0, maxMessages);
+  const msgs = dedupeThreadMessages(messages).slice(0, maxMessages);
   const firstSubj = getHeader(msgs[0]?.headers || {}, "subject") || "";
   const subjBase = normalizeSubjectRaw(firstSubj);
   const { version, total } = parsePatchSubject(firstSubj);
@@ -144,6 +144,57 @@ export function getHeader(headers: Record<string, string | string[]>, name: stri
   if (Array.isArray(v)) return v[0];
   if (typeof v === "string") return v;
   return undefined;
+}
+
+function normalizeMessageId(value?: string): string | undefined {
+  if (!value) return undefined;
+  return value.trim().replace(/^<|>$/g, "").toLowerCase();
+}
+
+function looksBase64Body(body: string): boolean {
+  if (!body) return false;
+  const lines = body.split(/\r?\n/);
+  let longBase64Lines = 0;
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (trimmed.length < 80) continue;
+    if (/^[A-Za-z0-9+/]+={0,2}$/.test(trimmed)) longBase64Lines++;
+    if (longBase64Lines >= 3) return true;
+  }
+  return false;
+}
+
+function messageQualityForSummary(msg: Message): number {
+  const cte = (getHeader(msg.headers, "content-transfer-encoding") || "").toLowerCase();
+  const body = msg.body || "";
+  let score = 0;
+  if (cte.includes("base64")) score -= 60;
+  if (/^from mboxrd@z /im.test(body)) score -= 40;
+  if (/^list-id:/im.test(body) || /^x-mailman-version:/im.test(body)) score -= 20;
+  if (looksBase64Body(body)) score -= 20;
+  if (cte.includes("8bit") || cte.includes("7bit")) score += 10;
+  score += Math.min(body.length, 4000) / 1000;
+  return score;
+}
+
+export function dedupeThreadMessages(messages: Message[]): Message[] {
+  const out: Message[] = [];
+  const byMessageId = new Map<string, number>();
+  for (const m of messages) {
+    const mid = normalizeMessageId(getHeader(m.headers, "message-id") || m.messageId);
+    if (!mid) {
+      out.push(m);
+      continue;
+    }
+    const idx = byMessageId.get(mid);
+    if (idx === undefined) {
+      byMessageId.set(mid, out.length);
+      out.push(m);
+      continue;
+    }
+    if (messageQualityForSummary(m) > messageQualityForSummary(out[idx])) out[idx] = m;
+  }
+  return out;
 }
 
 export function stripQuoted(body: string): string {
@@ -306,8 +357,8 @@ export function extractDiffs(body: string, opts: ExtractDiffOptions = {}): { dif
 
 export function detectPatchKind(msg: Message): "cover" | "patch" | "reply" {
   const subj = (getHeader(msg.headers, "subject") || "").toLowerCase();
-  if (/\[patch/.test(subj)) {
-    if (/\b0\/(\d+)\b/.test(subj)) return "cover";
+  if (/\[[^\]]*\bpatch\b/.test(subj)) {
+    if (/\[[^\]]*\b0+\s*\/\s*\d+\b[^\]]*\]/.test(subj)) return "cover";
     return "patch";
   }
   if (/^diff --git /m.test(msg.body)) return "patch";
@@ -316,7 +367,7 @@ export function detectPatchKind(msg: Message): "cover" | "patch" | "reply" {
 
 export function summarizeThread(messages: Message[], opts: ThreadSummaryOptions = {}) {
   const { maxMessages = 50, stripQuoted: doStrip = true, shortBodyBytes = 1200 } = opts;
-  const items = messages.slice(0, maxMessages).map((m) => {
+  const items = dedupeThreadMessages(messages).slice(0, maxMessages).map((m) => {
     const subject = getHeader(m.headers, "subject") || "";
     const from = getHeader(m.headers, "from");
     const date = getHeader(m.headers, "date");
@@ -333,18 +384,19 @@ export function summarizeThread(messages: Message[], opts: ThreadSummaryOptions 
 
 export function parsePatchSubject(subject: string): { base: string; version?: string; index?: number; total?: number } {
   // Examples: [PATCH v2 0/3] cover; [PATCH v3 2/7] foo; [PATCH 1/2] bar; [PATCH v4] baz
-  const m = subject.match(/\[\s*patch\s*(v\d+)?\s*(\d+)\/(\d+)\s*\]/i);
+  const tagRe = /\[\s*(?:[A-Za-z-]+\s+)*patch[^\]]*\]/i;
+  const m = subject.match(/\[\s*(?:[A-Za-z-]+\s+)*patch\s*(v\d+)?\s*(\d+)\/(\d+)\s*\]/i);
   if (m) {
     const version = m[1] || undefined;
     const index = Number(m[2]);
     const total = Number(m[3]);
-    const base = subject.replace(/\[\s*patch[^\]]*\]/i, "").trim();
+    const base = subject.replace(tagRe, "").trim();
     return { base, version, index, total };
   }
-  const m2 = subject.match(/\[\s*patch\s*(v\d+)?\s*\]/i);
+  const m2 = subject.match(/\[\s*(?:[A-Za-z-]+\s+)*patch\s*(v\d+)?\s*\]/i);
   if (m2) {
     const version = m2[1] || undefined;
-    const base = subject.replace(/\[\s*patch[^\]]*\]/i, "").trim();
+    const base = subject.replace(tagRe, "").trim();
     return { base, version };
   }
   return { base: subject };
@@ -377,10 +429,10 @@ export function buildPatchset(messages: Message[], opts: CompactPatchsetOptions 
   const withParts = parsed.find((p) => typeof p.index === "number" && typeof p.total === "number");
   const parts = withParts ? { index: withParts.index || 0, total: withParts.total || patchMsgs.length } : null;
 
-  const cover = patchMsgs.find((m, i) => (parsed[i].index === 0));
+  const cover = patchMsgs.find((_m, i) => (parsed[i].index === 0));
   const { includeDiffs = false, statOnly = false } = opts;
   const patches = patchMsgs
-    .filter((m, i) => parsed[i].index !== 0) // exclude cover from patches list
+    .filter((_m, i) => parsed[i].index !== 0) // exclude cover from patches list
     .map((m) => {
       const subject = getHeader(m.headers, "subject") || "";
       const messageId = getHeader(m.headers, "message-id") || m.messageId;

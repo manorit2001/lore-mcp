@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { stripQuoted, extractTrailers, summarizeThread } from '../dist/compact.js';
+import { stripQuoted, extractTrailers, summarizeThread, detectPatchKind } from '../dist/compact.js';
 
 const isVerbose = process.env.TEST_VERBOSE;
 const truncate = (str, len = 200) => (str.length > len ? `${str.slice(0, len)}…` : str);
@@ -86,4 +86,47 @@ test('summarizeThread produces compact items with kinds', () => {
   assert.equal(s.items[1].hasDiff, false);
   assert.match(s.items[1].body, /This looks good/);
   assert.doesNotMatch(s.items[1].body, /^>/m);
+});
+
+test('detectPatchKind handles RFC PATCH cover letters', () => {
+  const cover = detectPatchKind({
+    headers: { subject: '[RFC PATCH v2 00/12] spi: cadence-quadspi: add PHY tuning support' },
+    body: ''
+  });
+  const patch = detectPatchKind({
+    headers: { subject: '[RFC PATCH v2 01/12] spi: dt-bindings: add spi-has-dqs property' },
+    body: 'No diff in this synthetic case'
+  });
+  assert.equal(cover, 'cover');
+  assert.equal(patch, 'patch');
+});
+
+test('summarizeThread de-duplicates same message-id and prefers readable variant', () => {
+  const messages = [
+    {
+      headers: {
+        subject: 'Re: [RFC PATCH v2 01/12] spi: dt-bindings: add spi-has-dqs property',
+        from: 'Santhosh Kumar K <s-k6@ti.com>',
+        date: 'Thu, 5 Feb 2026 23:16:47 +0530',
+        'message-id': '<ba78303e-36aa-4f40-9416-c22ff12b7458@ti.com>',
+        'content-transfer-encoding': 'base64'
+      },
+      body: 'SGVsbG8gTWlxdWVsLApUaGlzIGlzIGEgYmFzZTY0IGJsb2IuCkFuZCBtb3JlIGJhc2U2NCBjb250ZW50IGxpbmUuCg=='
+    },
+    {
+      headers: {
+        subject: 'Re: [RFC PATCH v2 01/12] spi: dt-bindings: add spi-has-dqs property',
+        from: 'Santhosh Kumar K <s-k6@ti.com>',
+        date: 'Thu, 5 Feb 2026 23:16:47 +0530',
+        'message-id': '<ba78303e-36aa-4f40-9416-c22ff12b7458@ti.com>',
+        'content-transfer-encoding': '8bit'
+      },
+      body: 'Hello Miquel,\n\nI agree with your suggestion and will update the next revision.\nThanks,\nSanthosh.'
+    }
+  ];
+
+  const s = summarizeThread(messages, { maxMessages: 10, stripQuoted: false, shortBodyBytes: 1000 });
+  assert.equal(s.items.length, 1);
+  assert.match(s.items[0].body, /Hello Miquel/);
+  assert.doesNotMatch(s.items[0].body, /^[A-Za-z0-9+/]{70,}={0,2}$/m);
 });
