@@ -30,7 +30,7 @@ async function callToolJson(client, name, args) {
   return extractStructuredPayload(result);
 }
 
-async function findPatchCandidate(client) {
+async function findPatchCandidate(client, exercisedTools) {
   const attempts = [
     { query: 's:[PATCH] d:2024-01-01..', scope: 'linux-kernel', limit: 12 },
     { query: 's:[PATCH v2] d:2023-01-01..', scope: 'linux-kernel', limit: 20 },
@@ -39,6 +39,7 @@ async function findPatchCandidate(client) {
 
   for (const attempt of attempts) {
     const search = await callToolJson(client, 'search_lore', attempt);
+    exercisedTools?.add('search_lore');
     const items = Array.isArray(search?.items) ? search.items : [];
     for (const item of items) {
       if (!item?.url || !/\[patch/i.test(item?.subject || '')) continue;
@@ -61,6 +62,14 @@ async function findPatchCandidate(client) {
   }
 
   throw new Error('Could not find a viable patch candidate from live search results');
+}
+
+function assertScopeEntries(scopePayload) {
+  const items = Array.isArray(scopePayload) ? scopePayload : scopePayload?.items;
+  assert.ok(Array.isArray(items) && items.length > 0, 'scopes resource should expose entries');
+  assert.ok(items.every(item => item && typeof item === 'object'), 'each scope entry should be an object');
+  const hasIdentifier = items.some(item => typeof item?.name === 'string' || typeof item?.scope === 'string' || typeof item?.uri === 'string');
+  assert.ok(hasIdentifier, 'scope entries must include an identifier field');
 }
 
 async function withClient(run) {
@@ -125,6 +134,7 @@ test('MCP stdio transport end-to-end: get_thread_summary handles TI thread corne
 
 test('MCP stdio transport end-to-end: agent-like flow exercises all major tools', { timeout: 180000 }, async () => {
   await withClient(async (client) => {
+    const exercisedTools = new Set();
     const toolList = await client.listTools();
     assert.ok(Array.isArray(toolList.tools) && toolList.tools.length >= 8, 'expected tool list with core MCP tools');
 
@@ -152,18 +162,19 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
       || scopeRead?.contents?.[0]?.text;
     assert.equal(typeof scopeText, 'string');
     const scopePayload = JSON.parse(scopeText);
-    const scopeItems = Array.isArray(scopePayload) ? scopePayload : scopePayload?.items;
-    assert.ok(Array.isArray(scopeItems), 'scopes resource should return JSON array payload');
+    assertScopeEntries(scopePayload);
 
     const helpResult = await client.callTool({ name: 'lore_help', arguments: {} });
+    exercisedTools.add('lore_help');
     const helpText = helpResult?.content?.find?.(item => item?.type === 'text')?.text || '';
     assert.match(helpText, /search quick reference/i);
     assert.match(helpText, /Search basics/i);
 
     const scopes = await callToolJson(client, 'list_scopes', {});
+    exercisedTools.add('list_scopes');
     assert.ok(Array.isArray(scopes.items) && scopes.items.length > 0, 'list_scopes should return available scopes');
 
-    const { item: candidate, patchset: patchsetStat } = await findPatchCandidate(client);
+    const { item: candidate, patchset: patchsetStat } = await findPatchCandidate(client, exercisedTools);
     assert.ok(candidate.url, 'candidate patch URL should be present');
     assert.equal(typeof patchsetStat.aggregate.files, 'number');
     assert.equal(typeof patchsetStat.aggregate.insertions, 'number');
@@ -172,6 +183,7 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
     const raw = await callToolJson(client, 'get_message_raw', {
       url: candidate.url,
     });
+    exercisedTools.add('get_message_raw');
     assert.equal(typeof raw.body, 'string');
     assert.ok(raw.body.length > 0, 'message raw should include body');
     assert.ok(raw.headers && typeof raw.headers === 'object', 'message raw should include headers');
@@ -181,6 +193,7 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
       maxMessages: 8,
       maxBodyBytes: 8192,
     });
+    exercisedTools.add('get_thread_mbox');
     assert.ok(Array.isArray(thread.items) && thread.items.length > 0, 'thread mbox should include items');
 
     const summary = await callToolJson(client, 'get_thread_summary', {
@@ -189,6 +202,7 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
       shortBodyBytes: 1200,
       stripQuoted: true,
     });
+    exercisedTools.add('get_thread_summary');
     assert.ok(Array.isArray(summary.items) && summary.items.length > 0, 'thread summary should include compact items');
     assert.ok(summary.items.some(i => i?.kind === 'patch' || i?.kind === 'cover' || i?.kind === 'reply'));
 
@@ -201,6 +215,7 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
       maxHunkLines: 600,
       tokenBudget: 4000,
     });
+    exercisedTools.add('get_patchset');
     assert.ok(Array.isArray(patchsetWithDiff.patches) && patchsetWithDiff.patches.length > 0, 'patchset should include patches');
     assert.equal(typeof patchsetWithDiff.aggregate.files, 'number');
 
@@ -211,8 +226,23 @@ test('MCP stdio transport end-to-end: agent-like flow exercises all major tools'
       maxMessages: 12,
       stripQuoted: true,
     });
+    exercisedTools.add('summarize_thread_llm');
     assert.equal(typeof llmSummary.overview, 'string');
     assert.ok(llmSummary.overview.length > 0, 'mock LLM summary should contain overview text');
     assert.ok(Array.isArray(llmSummary.participants), 'mock LLM summary should include participants list');
+
+    const requiredTools = [
+      'search_lore',
+      'get_message_raw',
+      'get_thread_mbox',
+      'get_thread_summary',
+      'get_patchset',
+      'summarize_thread_llm',
+      'list_scopes',
+      'lore_help',
+    ];
+    for (const toolName of requiredTools) {
+      assert.ok(exercisedTools.has(toolName), `tool ${toolName} should be exercised in the comprehensive flow`);
+    }
   });
 });
