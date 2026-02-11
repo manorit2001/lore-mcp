@@ -22,6 +22,8 @@ npx -y github:manorit2001/lore-mcp#master
 
 This still runs over stdio, so MCP clients can use `command: "npx"` plus args. First run may take longer because `prepare` builds TypeScript before launch.
 
+By default the server prints a startup banner to stderr: `lore-mcp server started (stdio transport)`. Set `LORE_MCP_SILENT_STARTUP=1` to disable it.
+
 For reproducible setups, pin a tag or commit instead of `#master`.
 
 ### Run with Docker
@@ -116,6 +118,7 @@ These environment variables cover the common deployments:
 - `LORE_SCOPE` – Default mailing list scope (default `all`).
 - `LORE_MCP_MAILDIR` – Maildir location for cached messages (default `./maildir`).
 - `LORE_CACHE_DIR` / `LORE_MCP_CACHE_DIR` – Disk cache directory for raw responses.
+- `LORE_MCP_SILENT_STARTUP` – Set to `1` to suppress the startup banner on stderr.
 - `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY` – Standard proxy support.
 
 If the public-inbox `lei` binary is on `PATH`, `search_lore` will automatically use it for faster, more expressive queries; otherwise the server falls back to HTTP endpoints.

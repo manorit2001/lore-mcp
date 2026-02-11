@@ -175,6 +175,9 @@ async function main() {
 
   const transport = new StdioServerTransport();
   await mcp.connect(transport);
+  if (process.env.LORE_MCP_SILENT_STARTUP !== "1") {
+    console.error("lore-mcp server started (stdio transport)");
+  }
 }
 
 main().catch((err) => {
