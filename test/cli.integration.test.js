@@ -7,6 +7,7 @@ import { dirname, resolve } from 'node:path';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const cliPath = resolve(__dirname, '..', 'dist', 'cli.js');
+const TI_THREAD_URL = 'https://lore.kernel.org/all/ba78303e-36aa-4f40-9416-c22ff12b7458@ti.com/';
 const isVerbose = process.env.TEST_VERBOSE;
 const truncate = (str, len = 200) => {
   if (!str) return str;
@@ -17,6 +18,13 @@ const verboseLog = (label, payload) => {
   const value = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
   console.log(`[verbose] ${label}: ${value}`);
 };
+
+const base64LineRe = /^[A-Za-z0-9+/]{80,}={0,2}$/m;
+
+function normalizeMessageId(value) {
+  if (!value || typeof value !== 'string') return undefined;
+  return value.trim().replace(/^<|>$/g, '').toLowerCase();
+}
 
 async function runCli(args, extraEnv = {}) {
   verboseLog('cli.exec', { args, env: Object.keys(extraEnv) });
@@ -164,4 +172,39 @@ test('CLI commands interoperate with live lore.kernel.org responses', async () =
   assert.ok(patchset.aggregate);
   assert.equal(typeof patchset.aggregate.insertions, 'number');
   assert.equal(typeof patchset.aggregate.deletions, 'number');
+});
+
+test('CLI summary handles TI thread dedupe and RFC cover classification', async () => {
+  const baseEnv = {
+    PATH: process.env.PATH,
+  };
+
+  const summaryJson = await runCliJson([
+    'summary',
+    '--url', TI_THREAD_URL,
+    '--maxMessages', '120',
+    '--shortBodyBytes', '2048',
+  ], baseEnv);
+
+  assert.ok(Array.isArray(summaryJson.items) && summaryJson.items.length > 0, 'summary should include items');
+
+  const seen = new Set();
+  const duplicates = [];
+  for (const item of summaryJson.items) {
+    const mid = normalizeMessageId(item?.messageId);
+    if (!mid) continue;
+    if (seen.has(mid)) duplicates.push(mid);
+    seen.add(mid);
+  }
+  assert.equal(duplicates.length, 0, `expected no duplicate message-ids, got: ${duplicates.join(', ')}`);
+
+  const cover = summaryJson.items.find(item => /\[\s*rfc\s+patch[^\]]*\b0+\s*\/\s*12\b[^\]]*\]/i.test(item?.subject || ''));
+  assert.ok(cover, 'expected RFC cover letter item in summary');
+  assert.equal(cover.kind, 'cover');
+
+  const targetMid = 'ba78303e-36aa-4f40-9416-c22ff12b7458@ti.com';
+  const targetItem = summaryJson.items.find(item => normalizeMessageId(item?.messageId) === targetMid);
+  assert.ok(targetItem, `expected summary item for ${targetMid}`);
+  assert.equal(typeof targetItem.body, 'string');
+  assert.doesNotMatch(targetItem.body, base64LineRe);
 });
