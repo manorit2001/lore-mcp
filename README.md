@@ -4,15 +4,6 @@
 
 ## Quick Start
 
-### Run with Node.js
-```bash
-npm install
-npm run build
-npm start        # runs the MCP server (dist/index.js) over stdio
-```
-
-The server caches fetched mail in `./maildir` by default. Override with `LORE_MCP_MAILDIR=/path/to/maildir`. During development you can use `npm run dev` to execute the TypeScript entry via ts-node.
-
 ### Run directly from GitHub with npx
 If you do not want a full clone, run the MCP server directly from the Git URL:
 
@@ -26,17 +17,6 @@ By default the server prints a startup banner to stderr: `lore-mcp server starte
 
 For reproducible setups, pin a tag or commit instead of `#master`.
 
-### Run with Docker
-```bash
-docker build -t lore-mcp .
-docker run --rm -it lore-mcp
-```
-
-Mount a persistent Maildir if you want cache reuse:
-```bash
-docker run --rm -it -v "$PWD/maildir:/data/maildir" lore-mcp
-```
-
 ## Connect to an MCP Client
 
 ### Claude Code CLI (global config)
@@ -46,14 +26,10 @@ Edit `~/.claude.json` so every project can reach the server. This example runs t
 {
   "mcpServers": {
     "lore-mcp": {
-      "command": "docker",
+      "command": "npx",
       "args": [
-        "run",
-        "--rm",
-        "-i",
-        "-v",
-        "/home/you/.cache/lore-mcp:/data/maildir",
-        "lore-mcp"
+        "-y",
+        "github:manorit2001/lore-mcp#master",
       ],
       "env": {
         "LORE_BASE": "https://lore.kernel.org",
@@ -64,29 +40,23 @@ Edit `~/.claude.json` so every project can reach the server. This example runs t
 }
 ```
 
-Replace `/home/you` with your home directory. Restart Claude Code CLI (new shell) so it picks up the change. Claude streams requests over stdio, so keep the `-i` flag in place.
+Restart Claude Code CLI (new shell) so it picks up the change. 
 
 ### Claude Desktop
 Use either the Node entry point or the Docker image.
 
 **Node**
 ```bash
-claude mcp add lore-mcp node /absolute/path/to/lore-mcp/dist/index.js
-claude mcp list    # confirm registration
+claude mcp add lore-mcp npx -y github:manorit2001/lore-mcp#master
 ```
 
-**Docker**
-```bash
-claude mcp add lore-mcp docker run --rm -i \
-  -v /absolute/path/to/maildir:/data/maildir \
-  lore-mcp
-```
+
+
+`claude mcp list`    # confirm registration
+
 Adjust the volume path so Claude can persist cache data. Restart Claude Desktop after adding the server.
 
 ### Other MCP clients (Cursor, Cline, Codex CLI, etc.)
-Configure a server that runs `node /absolute/path/to/lore-mcp/dist/index.js` (or the Docker command above) and pass any desired environment variables (see below). Once registered, call `list_scopes` or read the `mcp://lore-mcp/scopes` resource to verify the connection.
-
-You can also use `npx` + Git URL without cloning locally:
 
 ```json
 {
@@ -190,3 +160,38 @@ lei --version
 ```
 
 When available, `search_lore` shells out to `lei`; otherwise it continues to use HTTPS endpoints.
+
+## Developer builds
+
+### Run with Node.js
+```bash
+npm install
+npm run build
+npm start        # runs the MCP server (dist/index.js) over stdio
+```
+
+The server caches fetched mail in `./maildir` by default. Override with `LORE_MCP_MAILDIR=/path/to/maildir`. During development you can use `npm run dev` to execute the TypeScript entry via ts-node.
+
+### Run with Docker
+```bash
+docker build -t lore-mcp .
+docker run --rm -it lore-mcp
+```
+
+Mount a persistent Maildir if you want cache reuse:
+```bash
+docker run --rm -it -v "$PWD/maildir:/data/maildir" lore-mcp
+```
+
+**Node**
+```bash
+claude mcp add lore-mcp node /absolute/path/to/lore-mcp/dist/index.js
+```
+
+**Docker**
+```bash
+claude mcp add lore-mcp docker run --rm -i \
+  -v /absolute/path/to/maildir:/data/maildir \
+  lore-mcp
+```
+
